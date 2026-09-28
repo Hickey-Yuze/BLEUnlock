@@ -60,3 +60,5 @@ swifttest/
 build_log*.txt
 build_final.log
 sample.txt
+artifact/
+smoke_*.log
