@@ -294,6 +294,10 @@ function tick(now) {
   ctx.globalCompositeOperation = 'source-over';
 
   if (t < DURATION / 1000) requestAnimationFrame(tick);
+  else if (!window.__finished) {
+    window.__finished = true;
+    try { window.webkit.messageHandlers.transition.postMessage('lock-finish'); } catch (e) {}
+  }
 }
 
 // 加载头像图，采样成粒子后启动

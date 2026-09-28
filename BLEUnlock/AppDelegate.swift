@@ -325,13 +325,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
             print("Entering password")
             self.unlockedAt = Date().timeIntervalSince1970
             self.fakeKeyStrokes(password)
-            if TransitionController.shared.enabled {
-                // 等系统完成解锁后播放解锁过渡动画
-                Timer.scheduledTimer(withTimeInterval: 1.2, repeats: false, block: { _ in
-                    guard !self.isScreenLocked() else { return }
-                    TransitionController.shared.playUnlockTransition()
-                })
-            }
+            // 解锁动画由 onUnlock（com.apple.screenIsUnlocked 通知）统一触发，此处不再重复播放
             self.playNowPlaying()
             self.runScript("unlocked")
         })
@@ -371,6 +365,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     }
 
     @objc func onUnlock() {
+        // 手动输密码与 BLE 自动解锁统一走这里：系统刚完成解锁，立即播放解锁过渡动画
+        TransitionController.shared.playUnlockTransition()
         Timer.scheduledTimer(withTimeInterval: 2, repeats: false, block: { _ in
             print("onUnlock")
             if Date().timeIntervalSince1970 >= self.unlockedAt + 10 {

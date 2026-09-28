@@ -277,6 +277,11 @@ function tick(now) {
 
 // 直接自动开始
 sfx.play().catch(()=>{}); start();
+
+// 动画 3.4s + 0.6s 淡出结束后通知宿主关窗（JS 精确时序，避免固定 Timer 偏差）
+setTimeout(() => {
+  try { window.webkit.messageHandlers.transition.postMessage('unlock-finish'); } catch (e) {}
+}, 4000);
 </script>
 </body>
 </html>
