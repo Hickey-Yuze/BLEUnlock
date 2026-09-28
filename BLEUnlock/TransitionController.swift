@@ -44,7 +44,17 @@ final class TransitionController: NSObject {
     // MARK: - 对外接口
 
     /// app 启动后预热 WKWebView 进程与页面，锁定/解锁时几乎零延迟。
+    /// 环境变量 BLEUnlockPreview=lock|unlock 时直接播放对应动画（不执行真实锁屏/关窗逻辑），用于安全预览。
     func warmUp() {
+        if let preview = ProcessInfo.processInfo.environment["BLEUnlockPreview"] {
+            if preview == "lock" {
+                beginLockTransition { }
+                return
+            } else if preview == "unlock" {
+                playUnlockTransition()
+                return
+            }
+        }
         guard enabled else { return }
         DispatchQueue.main.async { [weak self] in
             self?.rewarm(.lock)

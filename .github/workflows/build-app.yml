@@ -19,8 +19,12 @@ jobs:
           ls -la build/BLEUnlock.app/Contents/MacOS build/BLEUnlock.app/Contents/Resources
           codesign -dv build/BLEUnlock.app
 
+      - name: Package bundle (zip to preserve structure)
+        run: |
+          cd build && ditto -c -k --keepParent BLEUnlock.app BLEUnlock-app.zip
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: BLEUnlock-app
-          path: build/BLEUnlock.app
+          path: build/BLEUnlock-app.zip
