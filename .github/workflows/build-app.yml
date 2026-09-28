@@ -1,0 +1,26 @@
+name: Build App
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [transition-effects]
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build BLEUnlock.app
+        run: ./build.sh
+
+      - name: Verify bundle
+        run: |
+          ls -la build/BLEUnlock.app/Contents/MacOS build/BLEUnlock.app/Contents/Resources
+          codesign -dv build/BLEUnlock.app
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BLEUnlock-app
+          path: build/BLEUnlock.app

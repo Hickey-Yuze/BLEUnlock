@@ -55,3 +55,8 @@ fastlane/screenshots
 .DS_Store
 
 /archives
+build/
+swifttest/
+build_log*.txt
+build_final.log
+sample.txt

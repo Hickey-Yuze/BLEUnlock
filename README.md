@@ -230,3 +230,45 @@ They are originally designed by Google LLC and licensed under Apache License ver
 MIT
 
 Copyright © 2019-2022 Takeshi Sone.
+
+---
+
+## Transition Effects（本地改造版）
+
+本分支在原版基础上为「锁定 / 解锁」加入了自定义的过渡动画与音效（`transition-effects` 分支）：
+
+- **锁定**（BLE 设备离开或手动 Lock Screen Now）：全屏播放 `lock.html` 动画（头像 → 粒子离子化 → 飞散，6.5s）+ `lock.wav` 音效，**动画播完后才执行真正的系统锁屏**。
+- **解锁**（BLE 设备靠近、自动注入密码后）：系统解锁完成时全屏播放 `unlock.html` 动画（粒子汇聚成头像 + 涟漪，3.4s）+ `unlock.wav` 音效。
+- **设备折返保护**：锁定动画播完之前若 BLE 设备重新靠近（且非手动锁定），挂起的锁屏动作自动取消，动画窗口关闭、不打扰使用。
+- 菜单栏新增 **「过渡动画 / Transition Effect」** 开关（默认开启），可随时关闭回退为原版行为。
+- 动画素材在 `BLEUnlock/Resources/`（`lock.html` / `unlock.html` / `lock.wav` / `unlock.wav` / `app-logo.png`）；HTML 内嵌音频已让位给原生 `AVAudioPlayer` 播放，避免双重声音。
+
+### 无 Xcode 构建（Command Line Tools）
+
+本机无完整 Xcode 时可直接用本仓库自带脚本构建（产物 `build/BLEUnlock.app`）：
+
+```
+./build.sh
+```
+
+脚本与原 Xcode 工程的差异（均已写在脚本注释里）：
+
+| 原工程机制 | 本构建替代方案 |
+|---|---|
+| `@NSApplicationMain` + `MainMenu.xib` | `BLEUnlock/main.swift` 手动入口（无 nib） |
+| `AboutBox.xib` | `AboutBox.swift` 纯代码窗口 |
+| `Assets.car`（actool） | 状态栏图标改为 bundle 内 PDF + `statusBarImage()` 加载；App 图标由 `app-logo.png` 生成 icns |
+| 私有框架隐式链接 | 显式 `-F /System/Library/PrivateFrameworks -framework login -framework MediaRemote` |
+
+用 Xcode 构建时：恢复 `AppDelegate` 的 `@NSApplicationMain` 并删除 `main.swift`，将 `TransitionController.swift` 与 `Resources/` 加入 target 即可。
+
+### 本机构建的已知坑（build.sh 已内置处理）
+
+CommandLineTools 的 swiftc(6.2.0.19) 与自带 SDK(6.2.0.17) 存在版本错位，且 CLT 26 的
+`SwiftBridging` module 在 3 处 modulemap 重复定义。脚本通过以下参数绕过：
+
+1. VFS overlay（`-Xcc -ivfsoverlay`）把 `usr/include/swift/{module,bridging}.modulemap` 映射为空文件，只保留 `usr/include/module.modulemap` 一份定义；
+2. `-Xfrontend -interface-compiler-version 6.2` 跳过 swiftinterface 的编译器版本指纹校验（同 major 向后兼容）。
+
+若日后 CLT 升级对齐了 SDK 版本，可移除这两个 workaround。
+

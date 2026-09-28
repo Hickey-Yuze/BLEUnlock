@@ -6,7 +6,18 @@ func t(_ key: String) -> String {
     return NSLocalizedString(key, comment: "")
 }
 
-@NSApplicationMain
+// 手动构建无 Assets.car，菜单栏图标从 bundle 资源加载 PDF；
+// 用 Xcode 构建时回落到 asset catalog。
+func statusBarImage(_ name: String) -> NSImage? {
+    if let url = Bundle.main.url(forResource: name, withExtension: "pdf"),
+       let img = NSImage(contentsOf: url) {
+        img.isTemplate = true
+        return img
+    }
+    return NSImage(named: name)
+}
+
+// 程序入口由 main.swift 承担（手动构建）。用 Xcode 构建时恢复 @NSApplicationMain 并删除 main.swift。
 class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation, NSUserNotificationCenterDelegate, BLEDelegate {
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     let ble = BLE()
@@ -122,13 +133,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
             monitorMenuItem?.title = String(format:"%ddBm", r) + (active ? " (Active)" : "")
             if (!connected) {
                 connected = true
-                statusItem.button?.image = NSImage(named: "StatusBarConnected")
+                statusItem.button?.image = statusBarImage("StatusBarConnected")
             }
         } else {
             monitorMenuItem?.title = t("not_detected")
             if (connected) {
                 connected = false
-                statusItem.button?.image = NSImage(named: "StatusBarDisconnected")
+                statusItem.button?.image = statusBarImage("StatusBarDisconnected")
             }
         }
     }
@@ -218,6 +229,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
 
     func updatePresence(presence: Bool, reason: String) {
         if presence {
+            // 锁定过渡动画挂起中且非手动锁定 → 设备折返，取消挂起的锁屏动作
+            if TransitionController.shared.lockPending && !manualLock {
+                TransitionController.shared.cancelLockTransition()
+            }
             if ble.unlockRSSI != ble.UNLOCK_DISABLED {
                 if let un = userNotification {
                     NSUserNotificationCenter.default.removeDeliveredNotification(un)
@@ -236,9 +251,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         } else {
             if (!isScreenLocked() && ble.lockRSSI != ble.LOCK_DISABLED) {
                 pauseNowPlaying()
-                lockOrSaveScreen()
-                notifyUser(reason)
-                runScript(reason)
+                if TransitionController.shared.enabled && !TransitionController.shared.lockPending {
+                    // 先播放锁屏过渡动画，动画播完后再真正锁屏
+                    TransitionController.shared.beginLockTransition { [weak self] in
+                        self?.lockOrSaveScreen()
+                        self?.notifyUser(reason)
+                        self?.runScript(reason)
+                    }
+                } else {
+                    lockOrSaveScreen()
+                    notifyUser(reason)
+                    runScript(reason)
+                }
             }
             manualLock = false
         }
@@ -301,6 +325,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
             print("Entering password")
             self.unlockedAt = Date().timeIntervalSince1970
             self.fakeKeyStrokes(password)
+            if TransitionController.shared.enabled {
+                // 等系统完成解锁后播放解锁过渡动画
+                Timer.scheduledTimer(withTimeInterval: 1.2, repeats: false, block: { _ in
+                    guard !self.isScreenLocked() else { return }
+                    TransitionController.shared.playUnlockTransition()
+                })
+            }
             self.playNowPlaying()
             self.runScript("unlocked")
         })
@@ -379,7 +410,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
 
     func monitorDevice(uuid: UUID) {
         connected = false
-        statusItem.button?.image = NSImage(named: "StatusBarDisconnected")
+        statusItem.button?.image = statusBarImage("StatusBarDisconnected")
         monitorMenuItem?.title = t("not_detected")
         ble.startMonitor(uuid: uuid)
     }
@@ -552,11 +583,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         menuItem.state = wakeWithoutUnlocking ? .on : .off
     }
 
+    @objc func toggleTransition(_ menuItem: NSMenuItem) {
+        let value = !TransitionController.shared.enabled
+        prefs.set(value, forKey: "transition")
+        menuItem.state = value ? .on : .off
+    }
+
     @objc func lockNow() {
         guard !isScreenLocked() else { return }
+        guard !TransitionController.shared.lockPending else { return }
         manualLock = true
         pauseNowPlaying()
-        lockOrSaveScreen()
+        if TransitionController.shared.enabled {
+            TransitionController.shared.beginLockTransition { [weak self] in
+                self?.lockOrSaveScreen()
+            }
+        } else {
+            lockOrSaveScreen()
+        }
     }
     
     @objc func showAboutBox() {
@@ -638,6 +682,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
             item.state = .on
         }
 
+        item = mainMenu.addItem(withTitle: t("transition_effect"), action: #selector(toggleTransition), keyEquivalent: "")
+        item.state = TransitionController.shared.enabled ? .on : .off
+
         item = mainMenu.addItem(withTitle: t("sleep_display"), action: #selector(toggleSleepDisplay), keyEquivalent: "")
         if prefs.bool(forKey: "sleepDisplay") {
             item.state = .on
@@ -675,7 +722,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         if let button = statusItem.button {
-            button.image = NSImage(named: "StatusBarDisconnected")
+            button.image = statusBarImage("StatusBarDisconnected")
             constructMenu()
         }
         ble.delegate = self
@@ -724,6 +771,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         }
         checkAccessibility()
         checkUpdate()
+        TransitionController.shared.warmUp()
 
         // Hide dock icon.
         // This is required because we can't have LSUIElement set to true in Info.plist,
