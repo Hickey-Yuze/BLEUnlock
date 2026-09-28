@@ -717,6 +717,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     }
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
+        // 尽早预热过渡动画 WebView（BLEUnlockPreview 预览也在此立即生效，
+        // 不被后续蓝牙初始化、钥匙串弹窗、授权提示等阻塞）
+        TransitionController.shared.warmUp()
+
         if let button = statusItem.button {
             button.image = statusBarImage("StatusBarDisconnected")
             constructMenu()
@@ -762,12 +766,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         dnc.addObserver(self, selector: #selector(onScreensaverStart), name: NSNotification.Name(rawValue: "com.apple.screensaver.didstart"), object: nil)
         dnc.addObserver(self, selector: #selector(onScreensaverStop), name: NSNotification.Name(rawValue: "com.apple.screensaver.didstop"), object: nil)
 
-        if ble.unlockRSSI != ble.UNLOCK_DISABLED && !prefs.bool(forKey: "wakeWithoutUnlocking") && fetchPassword() == nil {
-            askPassword()
+        // 预览模式跳过需要人工交互的弹窗与提示，保证冒烟测试无阻塞
+        let isPreview = ProcessInfo.processInfo.environment["BLEUnlockPreview"] != nil
+        if !isPreview {
+            if ble.unlockRSSI != ble.UNLOCK_DISABLED && !prefs.bool(forKey: "wakeWithoutUnlocking") && fetchPassword() == nil {
+                askPassword()
+            }
+            checkAccessibility()
+            checkUpdate()
         }
-        checkAccessibility()
-        checkUpdate()
-        TransitionController.shared.warmUp()
 
         // Hide dock icon.
         // This is required because we can't have LSUIElement set to true in Info.plist,
