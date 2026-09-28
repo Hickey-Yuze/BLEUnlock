@@ -77,7 +77,6 @@ swiftc \
     BLEUnlock/AboutBox.swift \
     "$BUILD_DIR/lowlevel.o" \
     -Xcc -iframework /System/Library/PrivateFrameworks \
-    -framework login \
     -framework MediaRemote \
     -o "$APP/Contents/MacOS/$APP_NAME"
 
