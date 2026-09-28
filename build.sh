@@ -37,6 +37,21 @@ echo "==> 编译 lowlevel.c"
 clang -O2 -arch arm64 -isysroot "$SDK" \
     -c BLEUnlock/lowlevel.c -o "$BUILD_DIR/lowlevel.o"
 
+echo "==> 生成 login.framework 链接桩（SACLockScreenImmediate）"
+# 新版 macOS 已从系统目录移除 login.framework 的链接桩，但运行时符号仍在
+# dyld shared cache 中。此处用 tapi tbd 声明链接期承诺，运行时由 install-name 解析。
+cat > "$BUILD_DIR/login.tbd" <<'TBD'
+--- !tapi-tbd-v3
+archs:           [ arm64, x86_64 ]
+platform:        macosx
+install-name:    /System/Library/PrivateFrameworks/login.framework/Versions/A/login
+current-version: 0
+compatibility-version: 0
+exports:
+  - archs:           [ arm64, x86_64 ]
+    symbols:         [ _SACLockScreenImmediate ]
+TBD
+
 echo "==> 编译 Swift + 链接"
 # CLT 26 的 SwiftBridging module 在 usr/include/module.modulemap 与
 # usr/include/swift/module.modulemap 两处重复定义，同时加载即冲突。
@@ -77,6 +92,7 @@ swiftc \
     BLEUnlock/AboutBox.swift \
     "$BUILD_DIR/lowlevel.o" \
     -Xlinker -F -Xlinker /System/Library/PrivateFrameworks \
+    -Xlinker "$BUILD_DIR/login.tbd" \
     -framework MediaRemote \
     -o "$APP/Contents/MacOS/$APP_NAME"
 
